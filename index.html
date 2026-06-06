@@ -352,7 +352,7 @@ async function pushToGitHub(contentBase64){
   // 先获取当前文件 SHA
   let sha='';
   try{
-    const getResp=await fetch(api,{headers:{Authorization:'token '+GH_TOKEN}});
+    const getResp=await fetch(api,{headers:{Authorization:'Bearer '+GH_TOKEN}});
     if(getResp.ok){const info=await getResp.json();sha=info.sha;}
   }catch(e){}
   // 上传
@@ -363,7 +363,7 @@ async function pushToGitHub(contentBase64){
   if(sha)body.sha=sha;
   const resp=await fetch(api,{
     method:'PUT',
-    headers:{Authorization:'token '+GH_TOKEN,'Content-Type':'application/json'},
+    headers:{Authorization:'Bearer '+GH_TOKEN,'Content-Type':'application/json'},
     body:JSON.stringify(body)
   });
   return resp.ok;
