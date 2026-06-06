@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>人脸识别系统</title>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:#111;color:#fff;
+  width:100vw;height:100dvh;overflow:hidden;
+  -webkit-tap-highlight-color:transparent;
+}
+.app{
+  display:flex;flex-direction:column;
+  height:100dvh;max-width:480px;margin:0 auto;
+}
+
+/* 顶栏 */
+.bar{
+  background:#1a1a2e;text-align:center;
+  padding:10px 12px;border-bottom:2px solid #0f3460;
+}
+.bar h1{font-size:18px;letter-spacing:2px}
+.bar .tip{font-size:11px;color:#4ecca3;margin-top:3px;min-height:17px}
+
+/* 摄像头 */
+.cam{
+  flex:1;position:relative;background:#000;overflow:hidden;
+}
+.cam.mirror video,.cam.mirror canvas{
+  transform:scaleX(-1);
+}
+.cam video,.cam canvas{
+  position:absolute;top:0;left:0;
+  width:100%;height:100%;object-fit:cover;
+}
+.cam .tag{
+  position:absolute;top:8px;left:8px;z-index:5;
+  padding:5px 12px;border-radius:14px;
+  font-size:12px;font-weight:700;
+}
+.tag.ok{background:rgba(78,204,163,0.88);color:#000}
+.tag.no{background:rgba(233,69,96,0.88);color:#fff}
+.cam .cnt{
+  position:absolute;top:8px;right:8px;z-index:5;
+  padding:5px 12px;border-radius:14px;
+  font-size:11px;background:rgba(0,0,0,0.55);
+}
+
+/* 按钮栏 */
+.btns{
+  display:flex;gap:5px;padding:8px;
+  background:#1a1a2e;border-top:2px solid #0f3460;
+}
+.btns button{
+  flex:1;border:none;border-radius:8px;
+  padding:12px 0;font-size:14px;font-weight:700;
+  color:#fff;cursor:pointer;
+  min-width:0;
+}
+.btns button:active{opacity:0.7}
+.btn-a{background:#4ecca3;color:#000}
+.btn-b{background:#e94560}
+.btn-c{background:#0f3460}
+.btn-d{background:#533483}
+
+/* 弹窗 */
+.mask{
+  display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,0.8);z-index:99;
+  justify-content:center;align-items:center;
+}
+.mask.on{display:flex}
+.box{
+  background:#1a1a2e;border-radius:16px;padding:22px;
+  width:88%;max-width:340px;border:1px solid #0f3460;
+  text-align:center;
+}
+.box h3{margin-bottom:10px}
+.box input{
+  width:100%;padding:12px;border-radius:10px;
+  border:1px solid #4ecca3;background:#111;color:#fff;
+  font-size:16px;margin-bottom:14px;outline:none;
+}
+.box .row{display:flex;gap:8px}
+.box .row button{flex:1;padding:10px;border:none;border-radius:20px;font-size:14px;font-weight:700;cursor:pointer}
+
+/* toast */
+.toast{
+  position:fixed;bottom:140px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,0.85);color:#fff;
+  padding:10px 22px;border-radius:22px;font-size:13px;
+  z-index:199;opacity:0;transition:opacity .3s;pointer-events:none;
+}
+.toast.on{opacity:1}
+
+/* 录入名单 */
+.names{
+  position:absolute;bottom:8px;left:8px;right:8px;z-index:5;
+  display:flex;flex-wrap:wrap;gap:3px;pointer-events:none;
+}
+.names span{
+  background:rgba(78,204,163,0.82);color:#000;
+  padding:1px 9px;border-radius:10px;font-size:10px;font-weight:600;
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="bar">
+    <h1>人脸识别系统</h1>
+    <div class="tip" id="tip">加载模型中...</div>
+  </div>
+  <div class="cam mirror" id="camWrap">
+    <video id="v" autoplay playsinline muted></video>
+    <canvas id="c"></canvas>
+    <div class="tag ok" id="tag">识别模式</div>
+    <div class="cnt" id="cnt">已录入:0</div>
+    <div class="names" id="ns"></div>
+  </div>
+  <div class="btns">
+    <button class="btn-a" id="btn1" onclick="switchMode('recog')">识别</button>
+    <button class="btn-b" id="btn2" onclick="startEnroll()">录入</button>
+    <button class="btn-a" onclick="exportData()">导出</button>
+    <button class="btn-c" onclick="syncRemote()">同步</button>
+    <button class="btn-c" onclick="toggleCam()">镜头</button>
+    <button class="btn-d" onclick="importData()">导入</button>
+  </div>
+  <input type="file" id="filePick" accept=".json" style="display:none" onchange="onFilePick(event)">
+</div>
+
+<div class="mask" id="mask">
+  <div class="box">
+    <h3>录入人脸</h3>
+    <p style="color:#aaa;font-size:13px;margin-bottom:12px">正对摄像头，确保面部清晰</p>
+    <input id="nameIn" placeholder="请输入姓名">
+    <div class="row">
+      <button class="btn-a" onclick="confirmEnroll()">确认</button>
+      <button style="background:#444;color:#fff" onclick="cancelEnroll()">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ==== 配置 ====
+const DATA_FILE = 'face_data.json';
+const GH_TOKEN = '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';
+const GH_OWNER = 'why30215';
+const GH_REPO  = 'face-app';
+
+// ==== 状态 ====
+let mode = 'recog';
+let faces = [];
+let stream = null;
+let facing = 'user';
+let timer = null;
+let toastTimer = null;
+
+// ==== DOM ====
+const $ = id => document.getElementById(id);
+const v    = $('v');
+const c    = $('c');
+const tip  = $('tip');
+const tag  = $('tag');
+const cnt  = $('cnt');
+const ns   = $('ns');
+const toast= $('toast');
+const mask = $('mask');
+const nameIn=$('nameIn');
+const btn1 = $('btn1');
+const btn2 = $('btn2');
+
+function toastShow(msg){
+  clearTimeout(toastTimer);
+  toast.textContent=msg;
+  toast.classList.add('on');
+  toastTimer=setTimeout(()=>toast.classList.remove('on'),2200);
+}
+
+// ==== AI 模型 ====
+async function loadModels(){
+  const u='https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+  try{
+    await faceapi.nets.tinyFaceDetector.loadFromUri(u);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(u);
+    await faceapi.nets.faceRecognitionNet.loadFromUri(u);
+    await faceapi.nets.ssdMobilenetv1.loadFromUri(u);
+    tip.textContent='模型就绪';
+  }catch(e){ tip.textContent='模型加载失败'; }
+}
+
+// ==== 摄像头 ====
+async function startCam(){
+  if(stream){stream.getTracks().forEach(t=>t.stop());}
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:facing,width:{ideal:640},height:{ideal:480}},audio:false
+    });
+    v.srcObject=stream;
+    await v.play();
+    tip.textContent='摄像头就绪';
+  }catch(e){tip.textContent='无法访问摄像头';toastShow('请允许摄像头权限');}
+}
+async function toggleCam(){
+  facing=facing==='user'?'environment':'user';
+  await startCam();
+  const camEl=$('camWrap');
+  if(facing==='user')camEl.classList.add('mirror');
+  else camEl.classList.remove('mirror');
+  toastShow(facing==='user'?'前置摄像头':'后置摄像头');
+}
+
+// ==== 检测主循环 ====
+async function loop(){
+  if(!v.readyState) return;
+  const ctx=c.getContext('2d');
+  const sz={width:v.videoWidth,height:v.videoHeight};
+  faceapi.matchDimensions(c,sz);
+
+  const opt=new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:0.5});
+  try{
+    const r=await faceapi.detectSingleFace(v,opt).withFaceLandmarks().withFaceDescriptor();
+    ctx.clearRect(0,0,c.width,c.height);
+    if(!r){tip.textContent='未检测到人脸';return;}
+
+    const {detection,landmarks,descriptor}=r;
+    const box=detection.box;
+
+    new faceapi.draw.DrawBox(box,{
+      label:'',boxColor:mode==='recog'?'#4ecca3':'#e94560',lineWidth:3
+    }).draw(c);
+    faceapi.draw.drawFaceLandmarks(c,landmarks,{lineWidth:1,color:'#4ecca3',drawLines:true});
+
+    if(mode==='recog'&&faces.length>0){
+      const fm=new faceapi.FaceMatcher(faces,0.4);
+      const m=fm.findBestMatch(descriptor);
+      new faceapi.draw.DrawBox(box,{
+        label:m.label!=='unknown'?m.label+' '+m.distance.toFixed(2):'未知',
+        boxColor:m.label!=='unknown'?'#4ecca3':'#e94560',lineWidth:3
+      }).draw(c);
+      tip.textContent=m.label!=='unknown'
+        ?'识别: '+m.label+' ('+((1-m.distance)*100).toFixed(0)+'%)'
+        :'未识别到已录入人员';
+    }else if(mode==='enroll'){
+      tip.textContent='录入模式 - 保持面部清晰后确认';
+    }else{
+      tip.textContent='已检测到人脸';
+    }
+  }catch(e){}
+}
+
+// ==== 模式 ====
+function switchMode(m){
+  mode=m;
+  if(m==='recog'){
+    tag.textContent='识别模式';tag.className='tag ok';
+    btn1.style.opacity='1';btn2.style.opacity='0.5';
+    tip.textContent='识别模式';
+  }else{
+    tag.textContent='录入模式';tag.className='tag no';
+    btn1.style.opacity='0.5';btn2.style.opacity='1';
+    tip.textContent='录入模式';
+  }
+}
+
+// ==== 录入 ====
+function startEnroll(){
+  if(!v.readyState){toastShow('摄像头未就绪');return;}
+  switchMode('enroll');
+  nameIn.value='';
+  mask.classList.add('on');
+  setTimeout(()=>nameIn.focus(),300);
+}
+function cancelEnroll(){
+  mask.classList.remove('on');
+  switchMode('recog');
+}
+async function confirmEnroll(){
+  const name=nameIn.value.trim();
+  if(!name){toastShow('请输入姓名');return;}
+  mask.classList.remove('on');
+
+  // 用更精准的 SSD 模型采集，提高眼镜/复杂场景识别率
+  const ds=[];
+  const angles=['正视前方','稍微左转','稍微右转','微微抬头','微微低头',
+                '保持自然','可戴眼镜','摘掉眼镜','微笑','放松'];
+  const total=angles.length;
+
+  for(let i=0;i<total;i++){
+    tip.textContent=name+' - '+angles[i]+' ('+(i+1)+'/'+total+')';
+    await new Promise(r=>setTimeout(r,600));
+    try{
+      const rr=await faceapi.detectSingleFace(v,new faceapi.SsdMobilenetv1Options({minConfidence:0.5}))
+        .withFaceLandmarks().withFaceDescriptor();
+      if(rr)ds.push(rr.descriptor);
+    }catch(e){}
+  }
+  if(ds.length<3){toastShow('采集不足，请重试');switchMode('recog');return;}
+  const idx=faces.findIndex(f=>f.label===name);
+  if(idx>=0)faces[idx].descriptors.push(...ds);
+  else faces.push(new faceapi.LabeledFaceDescriptors(name,ds));
+  refresh();
+  toastShow(name+' 录入成功 ('+ds.length+'张,10角度)');
+  switchMode('recog');
+}
+
+// ==== 界面更新 ====
+function refresh(){
+  cnt.textContent='已录入:'+faces.length;
+  ns.innerHTML=faces.map(f=>'<span>'+f.label+'</span>').join('');
+}
+
+// ==== 序列化 ====
+function ser(){
+  return faces.map(f=>({label:f.label,descriptors:f.descriptors.map(d=>Array.from(d))}));
+}
+function deser(data){
+  return data.map(f=>new faceapi.LabeledFaceDescriptors(f.label,f.descriptors.map(d=>new Float32Array(d))));
+}
+
+// ==== GitHub 同步 ====
+async function syncRemote(){
+  const url=new URL(DATA_FILE,window.location.href).href;
+  tip.textContent='检查云端...';
+  try{
+    const resp=await fetch(url);
+    if(!resp.ok){tip.textContent='云端暂无数据';toastShow('云端暂无数据，请先录入并导出');return;}
+    const json=await resp.json();
+    if(!json.length){tip.textContent='云端数据为空';return;}
+    const remoteMap=new Map();
+    const remote=deser(json);
+    remote.forEach(d=>remoteMap.set(d.label,d));
+    const merged=[...remote];
+    faces.forEach(f=>{if(!remoteMap.has(f.label))merged.push(f);});
+    faces=merged;
+    localStorage.setItem('faces',JSON.stringify(ser()));
+    refresh();
+    tip.textContent='同步完成: '+faces.length+'人';
+    toastShow('同步 '+remote.length+' 人，共 '+faces.length+' 人');
+  }catch(e){tip.textContent='连接云端失败';toastShow('无法连接云端');}
+}
+
+// ==== 导入导出 ====
+async function pushToGitHub(contentBase64){
+  const api=`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${DATA_FILE}`;
+  // 先获取当前文件 SHA
+  let sha='';
+  try{
+    const getResp=await fetch(api,{headers:{Authorization:'token '+GH_TOKEN}});
+    if(getResp.ok){const info=await getResp.json();sha=info.sha;}
+  }catch(e){}
+  // 上传
+  const body={
+    message:'update face data',
+    content:contentBase64
+  };
+  if(sha)body.sha=sha;
+  const resp=await fetch(api,{
+    method:'PUT',
+    headers:{Authorization:'token '+GH_TOKEN,'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  return resp.ok;
+}
+
+async function exportData(){
+  if(!faces.length){toastShow('无数据可导出');return;}
+  const json=JSON.stringify(ser());
+  // 本地下载
+  const b=new Blob([json],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(b);
+  a.download='face_data.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  localStorage.setItem('faces',json);
+
+  // 自动推送到 GitHub
+  tip.textContent='正在上传到GitHub...';
+  const bytes=new TextEncoder().encode(json);
+  let bin='';
+  for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
+  const base64=btoa(bin);
+  const ok=await pushToGitHub(base64);
+  if(ok){
+    toastShow('已导出并同步到GitHub');
+    tip.textContent='同步完成';
+  }else{
+    toastShow('本地已保存，云端上传失败');
+    tip.textContent='云端上传失败';
+  }
+}
+function importData(){ $('filePick').click(); }
+function onFilePick(e){
+  const f=e.target.files[0];
+  if(!f)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const data=JSON.parse(ev.target.result);
+      faces=deser(data);
+      localStorage.setItem('faces',JSON.stringify(data));
+      refresh();
+      toastShow('导入 '+faces.length+' 人');
+    }catch(ex){toastShow('文件格式错误');}
+  };
+  reader.readAsText(f);
+  e.target.value='';
+}
+
+// ==== 本地恢复 ====
+function loadLocal(){
+  try{
+    const raw=localStorage.getItem('faces');
+    if(raw){const data=JSON.parse(raw);faces=deser(data);refresh();return true;}
+  }catch(e){}
+  return false;
+}
+
+// ==== 启动 ====
+async function boot(){
+  tip.textContent='加载模型中...';
+  await loadModels();
+  await startCam();
+  await syncRemote();
+  if(!faces.length)loadLocal();
+  timer=setInterval(loop,100);
+}
+boot();
+
+document.addEventListener('visibilitychange',()=>{
+  clearInterval(timer);
+  timer=setInterval(loop,document.hidden?500:100);
+});
+</script>
+</body>
+</html>
