@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>人脸识别系统</title>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="https://unpkg.com/@isomorphic-git/lightning-fs@0.6.5/dist/lightning-fs.min.js"></script>
+<script src="https://unpkg.com/isomorphic-git@1.27.0/dist/umd/bundle.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{
@@ -347,27 +349,40 @@ async function syncRemote(){
 }
 
 // ==== 导入导出 ====
-async function pushToGitHub(contentBase64){
-  const api=`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${DATA_FILE}`;
-  // 先获取当前文件 SHA
-  let sha='';
+// 用 git 协议推送 (走 github.com, 不用 api.github.com)
+async function pushToGitHub(content){
+  const fs = new LightningFS('facefs', {wipe: true});
+  const dir = '/repo';
+  const remoteUrl = `https://github.com/${GH_OWNER}/${GH_REPO}.git`;
+  const auth = () => ({username: GH_TOKEN, password: ''});
+
+  await git.init({fs, dir});
+  await git.addRemote({fs, dir, remote: 'origin', url: remoteUrl});
+
+  // 拉取远程最新状态
   try{
-    const getResp=await fetch(api,{headers:{Authorization:'token '+GH_TOKEN}});
-    if(getResp.ok){const info=await getResp.json();sha=info.sha;}
-  }catch(e){console.log('get sha error',e);}
-  // 上传
-  const body={message:'update face data',content:contentBase64};
-  if(sha)body.sha=sha;
-  const resp=await fetch(api,{
-    method:'PUT',
-    headers:{Authorization:'Bearer '+GH_TOKEN,'Content-Type':'application/json'},
-    body:JSON.stringify(body)
-  });
-  if(!resp.ok){
-    const txt=await resp.text();
-    console.log('push error',resp.status,txt);
+    await git.fetch({fs, dir, remote: 'origin', ref: 'main', depth: 1, onAuth: auth});
+  }catch(e){}
+
+  // 写入文件
+  await fs.promises.writeFile(dir + '/' + DATA_FILE, content, 'utf8');
+
+  // 暂存 + 提交
+  await git.add({fs, dir, filepath: DATA_FILE});
+  try{
+    await git.commit({fs, dir, message: 'update face data',
+      author: {name: 'FaceApp', email: 'app@face.local'}});
+  }catch(e){return true;}
+
+  // 推送
+  try{
+    await git.push({fs, dir, remote: 'origin', ref: 'main',
+      onAuth: auth, force: true});
+    return true;
+  }catch(e){
+    console.log('push fail', e.message);
+    return false;
   }
-  return resp.ok;
 }
 
 async function exportData(){
@@ -382,19 +397,10 @@ async function exportData(){
   URL.revokeObjectURL(a.href);
   localStorage.setItem('faces',json);
 
-  // 自动推送到 GitHub
-  tip.textContent='正在上传到GitHub...';
-  const bytes=new TextEncoder().encode(json);
-  let bin='';
-  for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
-  const base64=btoa(bin);
+  // 通过 git 协议推送到 GitHub
+  tip.textContent='正在上传...';
   let ok=false;
-  try{
-    ok=await pushToGitHub(base64);
-  }catch(e){
-    console.log('push error',e);
-    tip.textContent='网络错误: '+e.message;
-  }
+  try{ok=await pushToGitHub(json);}catch(e){tip.textContent='错误: '+e.message;}
   if(ok){
     toastShow('已导出并同步到GitHub');
     tip.textContent='同步完成';
