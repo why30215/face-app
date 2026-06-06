@@ -352,20 +352,21 @@ async function pushToGitHub(contentBase64){
   // 先获取当前文件 SHA
   let sha='';
   try{
-    const getResp=await fetch(api,{headers:{Authorization:'Bearer '+GH_TOKEN}});
+    const getResp=await fetch(api,{headers:{Authorization:'token '+GH_TOKEN}});
     if(getResp.ok){const info=await getResp.json();sha=info.sha;}
-  }catch(e){}
+  }catch(e){console.log('get sha error',e);}
   // 上传
-  const body={
-    message:'update face data',
-    content:contentBase64
-  };
+  const body={message:'update face data',content:contentBase64};
   if(sha)body.sha=sha;
   const resp=await fetch(api,{
     method:'PUT',
     headers:{Authorization:'Bearer '+GH_TOKEN,'Content-Type':'application/json'},
     body:JSON.stringify(body)
   });
+  if(!resp.ok){
+    const txt=await resp.text();
+    console.log('push error',resp.status,txt);
+  }
   return resp.ok;
 }
 
@@ -387,13 +388,19 @@ async function exportData(){
   let bin='';
   for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
   const base64=btoa(bin);
-  const ok=await pushToGitHub(base64);
+  let ok=false;
+  try{
+    ok=await pushToGitHub(base64);
+  }catch(e){
+    console.log('push error',e);
+    tip.textContent='网络错误: '+e.message;
+  }
   if(ok){
     toastShow('已导出并同步到GitHub');
     tip.textContent='同步完成';
   }else{
-    toastShow('本地已保存，云端上传失败');
-    tip.textContent='云端上传失败';
+    toastShow('云端上传失败，检查网络');
+    tip.textContent='上传失败';
   }
 }
 function importData(){ $('filePick').click(); }
