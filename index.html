@@ -122,7 +122,7 @@ async function loop(){
   if(!v.readyState)return;
   const ctx=c.getContext('2d'),sz={width:v.videoWidth,height:v.videoHeight};
   faceapi.matchDimensions(c,sz);
-  const opt=new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:0.5});
+  const opt=new faceapi.SsdMobilenetv1Options({minConfidence:0.6});
   try{
     const r=await faceapi.detectSingleFace(v,opt).withFaceLandmarks().withFaceDescriptor();
     ctx.clearRect(0,0,c.width,c.height);
@@ -131,7 +131,7 @@ async function loop(){
     new faceapi.draw.DrawBox(box,{label:'',boxColor:mode==='recog'?'#4ecca3':'#e94560',lineWidth:3}).draw(c);
     faceapi.draw.drawFaceLandmarks(c,landmarks,{lineWidth:1,color:'#4ecca3',drawLines:true});
     if(mode==='recog'&&faces.length>0){
-      const fm=new faceapi.FaceMatcher(faces,0.4),m=fm.findBestMatch(descriptor);
+      const fm=new faceapi.FaceMatcher(faces,0.38),m=fm.findBestMatch(descriptor);
       new faceapi.draw.DrawBox(box,{label:m.label!=='unknown'?m.label+' '+m.distance.toFixed(2):'未知',boxColor:m.label!=='unknown'?'#4ecca3':'#e94560',lineWidth:3}).draw(c);
       tip.textContent=m.label!=='unknown'?'识别: '+m.label+' ('+((1-m.distance)*100).toFixed(0)+'%)':'未识别到已录入人员';
     }else if(mode==='enroll'){tip.textContent='录入模式 - 保持面部清晰后确认'}
@@ -155,10 +155,10 @@ async function confirmEnroll(){
   const ds=[],angles=['正视前方','稍微左转','稍微右转','微微抬头','微微低头','保持自然','可戴眼镜','摘掉眼镜','微笑','放松'];
   for(let i=0;i<angles.length;i++){
     tip.textContent=name+' - '+angles[i]+' ('+(i+1)+'/'+angles.length+')';
-    await new Promise(r=>setTimeout(r,600));
+    await new Promise(r=>setTimeout(r,1200));
     try{const rr=await faceapi.detectSingleFace(v,new faceapi.SsdMobilenetv1Options({minConfidence:0.5})).withFaceLandmarks().withFaceDescriptor();if(rr)ds.push(rr.descriptor)}catch(e){}
   }
-  if(ds.length<3){ts('采集不足，请重试');switchMode('recog');return}
+  if(ds.length<5){ts('采集不足，请重试');switchMode('recog');return}
   const idx=faces.findIndex(f=>f.label===name);
   if(idx>=0)faces[idx].descriptors.push(...ds);else faces.push(new faceapi.LabeledFaceDescriptors(name,ds));
   refresh();ts(name+' 录入成功 ('+ds.length+'张)');switchMode('recog')
